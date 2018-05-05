@@ -947,7 +947,9 @@ retry:
       if (error != HA_ERR_KEY_NOT_FOUND && error != HA_ERR_END_OF_FILE)
       {
         /* Don't give error in the log file for some expected problems */
-        if (error != HA_ERR_RECORD_CHANGED && error != HA_ERR_WRONG_COMMAND)
+        if (error != HA_ERR_RECORD_CHANGED &&
+            error != HA_ERR_WRONG_COMMAND &&
+            error != HA_ERR_KEY_DOESNT_SUPPORT)
           sql_print_error("mysql_ha_read: Got error %d when reading "
                           "table '%s'",
                           error, tables->table_name.str);

@@ -60,6 +60,14 @@ int heap_rkey(HP_INFO *info, uchar *record, int inx, const uchar *key,
   }
   else
   {
+    /*
+      HASH key doesn't support search other than equality,
+      and doesn't support prefix search.
+    */
+    if (find_flag != HA_READ_KEY_EXACT ||
+        (1UL << share->keydef[inx].keysegs) != keypart_map + 1)
+      DBUG_RETURN(my_errno= HA_ERR_KEY_DOESNT_SUPPORT);
+
     if (!(pos= hp_search(info, share->keydef + inx, key, 0)))
     {
       info->update= HA_STATE_NO_KEY;

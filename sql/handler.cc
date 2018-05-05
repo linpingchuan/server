@@ -3793,6 +3793,11 @@ void handler::print_error(int error, myf errflag)
   case HA_ERR_TABLE_IN_FK_CHECK:
     textno= ER_TABLE_IN_FK_CHECK;
     break;
+  case HA_ERR_KEY_DOESNT_SUPPORT:
+    textno= ER_KEY_DOESNT_SUPPORT;
+    my_error(ER_KEY_DOESNT_SUPPORT, errflag,
+             table_share->key_info[table->file->active_index].name);
+    DBUG_VOID_RETURN;
   default:
     {
       /* The error was "unknown" to this function.
