@@ -48,6 +48,10 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 #include <my_default.h>
 #include <mysqld.h>
 
+#define MYSQL_CLIENT
+#include <sslopt-vars.h>
+#undef MYSQL_CLIENT
+
 #include <fcntl.h>
 #include <string.h>
 
@@ -360,12 +364,73 @@ uint opt_safe_slave_backup_timeout = 0;
 
 const char *opt_history = NULL;
 
-#if defined(HAVE_OPENSSL)
-my_bool opt_ssl_verify_server_cert = FALSE;
-#endif
 
 /* Whether xtrabackup_binlog_info should be created on recovery */
 static bool recover_binlog_info;
+
+MYSQL *
+xb_mysql_connect()
+{
+	MYSQL *connection = mysql_init(NULL);
+	char mysql_port_str[std::numeric_limits<int>::digits10 + 3];
+
+	sprintf(mysql_port_str, "%d", opt_port);
+
+	if (connection == NULL) {
+		msg("Failed to init MySQL struct: %s.\n",
+			mysql_error(connection));
+		return(NULL);
+	}
+
+	if (!opt_secure_auth) {
+		mysql_options(connection, MYSQL_SECURE_AUTH,
+			(char *)&opt_secure_auth);
+	}
+
+	if (xb_plugin_dir && *xb_plugin_dir) {
+		mysql_options(connection, MYSQL_PLUGIN_DIR, xb_plugin_dir);
+	}
+	mysql_options(connection, MYSQL_OPT_PROTOCOL, &opt_protocol);
+	mysql_options(connection, MYSQL_SET_CHARSET_NAME, "utf8");
+
+	msg_ts("Connecting to MySQL server host: %s, user: %s, password: %s, "
+		"port: %s, socket: %s\n", opt_host ? opt_host : "localhost",
+		opt_user ? opt_user : "not set",
+		opt_password ? "set" : "not set",
+		opt_port != 0 ? mysql_port_str : "not set",
+		opt_socket ? opt_socket : "not set");
+#ifdef HAVE_OPENSSL
+	if (opt_use_ssl)
+	{
+		mysql_ssl_set(connection, opt_ssl_key, opt_ssl_cert,
+			opt_ssl_ca, opt_ssl_capath,
+			opt_ssl_cipher);
+		mysql_options(connection, MYSQL_OPT_SSL_CRL, opt_ssl_crl);
+		mysql_options(connection, MYSQL_OPT_SSL_CRLPATH,
+			opt_ssl_crlpath);
+	}
+	mysql_options(connection, MYSQL_OPT_SSL_VERIFY_SERVER_CERT,
+		(char*)&opt_ssl_verify_server_cert);
+#endif
+
+	if (!mysql_real_connect(connection,
+		opt_host ? opt_host : "localhost",
+		opt_user,
+		opt_password,
+		"" /*database*/, opt_port,
+		opt_socket, 0)) {
+		msg("Failed to connect to MySQL server: %s.\n",
+			mysql_error(connection));
+		mysql_close(connection);
+		return(NULL);
+	}
+
+	xb_mysql_query(connection, "SET SESSION wait_timeout=2147483",
+		false, true);
+
+	return(connection);
+}
+
 
 /* Simple datasink creation tracking...add datasinks in the reverse order you
 want them destroyed. */
@@ -453,6 +518,7 @@ typedef struct {
 } data_thread_ctxt_t;
 
 /* ======== for option and variables ======== */
+#include <../../client/client_priv.h>
 
 enum options_xtrabackup
 {
@@ -528,8 +594,6 @@ enum options_xtrabackup
   OPT_INNODB_LOG_CHECKSUM_ALGORITHM,
   OPT_XTRA_INCREMENTAL_FORCE_SCAN,
   OPT_DEFAULTS_GROUP,
-  OPT_OPEN_FILES_LIMIT,
-  OPT_PLUGIN_DIR,
   OPT_PLUGIN_LOAD,
   OPT_INNODB_ENCRYPT_LOG,
   OPT_CLOSE_FILES,
@@ -915,9 +979,9 @@ struct my_option xb_client_options[] =
   {"secure-auth", OPT_XB_SECURE_AUTH, "Refuse client connecting to server if it"
     " uses old (pre-4.1.1) protocol.", &opt_secure_auth,
     &opt_secure_auth, 0, GET_BOOL, NO_ARG, 1, 0, 0, 0, 0, 0},
-
+#define MYSQL_CLIENT
 #include "sslopt-longopts.h"
-
+#undef MYSQL_CLIENT
 
   { 0, 0, 0, 0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0}
 };
@@ -1388,7 +1452,9 @@ xb_get_one_option(int optid,
       }
     }
     break;
+#define MYSQL_CLIENT
 #include "sslopt-case.h"
+#undef MYSQL_CLIENT
 
   case '?':
     usage();
